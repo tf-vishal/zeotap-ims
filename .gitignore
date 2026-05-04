@@ -1,0 +1,42 @@
+# --- IDE & OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+# Fedora/Linux specific
+*~
+.nfs*
+
+# --- Go / Backend ---
+/backend/bin/
+/backend/out/
+backend/*.exe
+backend/*.test
+backend/vendor/
+# If you build the binary locally
+ims-api
+ims-worker
+
+# --- Node / Frontend ---
+/frontend/node_modules/
+/frontend/dist/
+/frontend/build/
+/frontend/.env
+/frontend/.env.local
+/frontend/.env.development.local
+/frontend/.env.test.local
+/frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# --- Docker & Databases ---
+# IMPORTANT: Prevents checking in your local DB data
+/data/
+docker-compose.override.yml
+.env
+
+# --- Project Specific ---
+/scripts/load_test_results.txt
+*.log
