@@ -1,0 +1,41 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ims-redis
+    ports:
+      - "6380:6379"
+    command: >
+      redis-server
+      --notify-keyspace-events Ex
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7
+    container_name: ims-mongo
+    ports:
+      - "27018:27017"
+    environment:
+      MONGO_INITDB_DATABASE: ims
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ims-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ims
+      POSTGRES_PASSWORD: ims_secret
+      POSTGRES_DB: ims
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  mongo_data:
+  pg_data:
