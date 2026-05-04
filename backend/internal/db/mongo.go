@@ -46,6 +46,23 @@ func (m *MongoClient) InsertSignalAudit(ctx context.Context, audit *models.Signa
 	return err
 }
 
+// GetSignalsByWorkItemID returns all raw signals associated with a given work item ID.
+// Used by the investigation module to display forensic signal data.
+func (m *MongoClient) GetSignalsByWorkItemID(ctx context.Context, workItemID string) ([]models.SignalAudit, error) {
+	filter := map[string]interface{}{"work_item_id": workItemID}
+	cursor, err := m.db.Collection("signal_audits").Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []models.SignalAudit
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // Ping checks MongoDB connectivity (used by health endpoint).
 func (m *MongoClient) Ping(ctx context.Context) error {
 	return m.client.Ping(ctx, nil)

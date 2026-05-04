@@ -44,7 +44,7 @@ func main() {
 	defer pgClient.Close()
 
 	// ── 5. Observability ──────────────────────────────────────────────
-	metrics := observability.NewProcessorMetrics(5 * time.Second)
+	metrics := observability.NewProcessorMetrics(5*time.Second, redisClient)
 
 	// ── 6. Debouncer ──────────────────────────────────────────────────
 	debouncer := processor.NewDebouncer(

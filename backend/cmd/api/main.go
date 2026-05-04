@@ -9,10 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/tf-vishal/zeotap-ims/internal/api/handlers"
 	"github.com/tf-vishal/zeotap-ims/internal/api/middleware"
 	"github.com/tf-vishal/zeotap-ims/internal/config"
+	"github.com/tf-vishal/zeotap-ims/internal/db"
 	"github.com/tf-vishal/zeotap-ims/internal/observability"
 	iredis "github.com/tf-vishal/zeotap-ims/internal/redis"
 )
@@ -28,22 +30,45 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// ── 3. Stream Buffer (async) ──────────────────────────────────────
+	// ── 3. MongoDB (for signal investigation queries) ─────────────────
+	mongoClient, err := db.NewMongoClient(cfg)
+	if err != nil {
+		log.Fatalf("[main] failed to connect to mongodb: %v", err)
+	}
+	defer mongoClient.Close(context.Background())
+
+	// ── 4. PostgreSQL (for incident queries and closure) ──────────────
+	pgClient, err := db.NewPostgresClient(cfg)
+	if err != nil {
+		log.Fatalf("[main] failed to connect to postgresql: %v", err)
+	}
+	defer pgClient.Close()
+
+	// ── 5. Stream Buffer (async) ──────────────────────────────────────
 	// 4 background workers drain the channel into Redis streams.
 	streamBuffer := iredis.NewStreamBuffer(redisClient, cfg.RedisStreamName, 4)
 
-	// ── 4. Observability ──────────────────────────────────────────────
-	metrics := observability.NewMetrics(5 * time.Second)
+	// ── 6. Observability ──────────────────────────────────────────────
+	metrics := observability.NewMetrics(5*time.Second, redisClient)
 
-	// ── 5. Gin Router ─────────────────────────────────────────────────
+	// ── 7. Gin Router ─────────────────────────────────────────────────
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
-	router.Use(gin.Recovery()) // panic recovery middleware
+	router.Use(gin.Recovery())
+
+	// CORS — allow the React frontend to call the API.
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	// Global rate limiter — applied to all routes.
 	router.Use(middleware.RateLimiter(cfg.RateLimit, cfg.RateBurst))
 
-	// ── 6. Handlers ───────────────────────────────────────────────────
+	// ── 8. Handlers ───────────────────────────────────────────────────
 	ingestionHandler := &handlers.IngestionHandler{
 		Buffer:  streamBuffer,
 		Metrics: metrics,
@@ -51,11 +76,24 @@ func main() {
 	healthHandler := &handlers.HealthHandler{
 		RedisClient: redisClient,
 	}
+	incidentHandler := &handlers.IncidentHandler{
+		RedisClient: redisClient,
+		MongoClient: mongoClient,
+		PGClient:    pgClient,
+	}
 
+	// ── Stage 1: Ingestion ────────────────────────────────────────────
 	router.POST("/api/v1/signals", ingestionHandler.IngestSignal)
 	router.GET("/health", healthHandler.HealthCheck)
 
-	// ── 7. HTTP Server ────────────────────────────────────────────────
+	// ── Stage 5: Workflow API ─────────────────────────────────────────
+	router.GET("/api/v1/incidents/live", incidentHandler.GetLiveIncidents)
+	router.GET("/api/v1/incidents/:id/signals", incidentHandler.GetIncidentSignals)
+	router.PATCH("/api/v1/incidents/:id", incidentHandler.UpdateIncidentStatus)
+	router.POST("/api/v1/incidents/:id/close", incidentHandler.CloseIncident)
+	router.GET("/api/v1/analytics/vitals", incidentHandler.GetVitals)
+
+	// ── 9. HTTP Server ────────────────────────────────────────────────
 	srv := &http.Server{
 		Addr:         ":" + cfg.ServerPort,
 		Handler:      router,
@@ -64,8 +102,7 @@ func main() {
 		IdleTimeout:  30 * time.Second,
 	}
 
-	// ── 8. Graceful Shutdown ──────────────────────────────────────────
-	// Start server in a goroutine so we can listen for OS signals.
+	// ── 10. Graceful Shutdown ─────────────────────────────────────────
 	go func() {
 		log.Printf("[main] server starting on :%s", cfg.ServerPort)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -73,13 +110,11 @@ func main() {
 		}
 	}()
 
-	// Block until SIGINT or SIGTERM.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-quit
 	log.Printf("[main] received signal %s, shutting down gracefully...", sig)
 
-	// Give in-flight requests 10 seconds to complete.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

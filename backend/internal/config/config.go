@@ -34,6 +34,9 @@ type Config struct {
 
 	// ── PostgreSQL ───────────────────────────────────────
 	PostgresURI string
+
+	// ── Aggregator ───────────────────────────────────────
+	AggregatorIntervalSec int
 }
 
 // Load reads the .env file and populates a Config struct.
@@ -69,6 +72,9 @@ func Load() *Config {
 
 		// PostgreSQL
 		PostgresURI: getEnvOrDefault("POSTGRES_URI", "postgres://ims:ims_secret@localhost:5432/ims?sslmode=disable"),
+
+		// Aggregator
+		AggregatorIntervalSec: getEnvAsInt("AGGREGATOR_INTERVAL_SEC", 60),
 	}
 
 	log.Printf("[config] loaded — port=%s rate=%d burst=%d redis=%s stream=%s workers=%d debounce=%ds",

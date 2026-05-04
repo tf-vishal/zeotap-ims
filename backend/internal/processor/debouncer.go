@@ -232,7 +232,8 @@ func (d *Debouncer) scanOrphanedWindows() {
 	}
 }
 
-// flushWorkItem reads the accumulated data from Redis, inserts into PostgreSQL, and cleans up.
+// flushWorkItem reads the accumulated data from Redis, inserts into PostgreSQL,
+// updates the Redis hot-path for the live dashboard, and cleans up.
 func (d *Debouncer) flushWorkItem(componentID string) {
 	ctx := context.Background()
 	dataKey := dataPrefix + componentID
@@ -262,6 +263,17 @@ func (d *Debouncer) flushWorkItem(componentID string) {
 		log.Printf("[debouncer] flush to postgres failed for %s: %v", componentID, err)
 		// Don't delete the data key so the fallback scanner can retry.
 		return
+	}
+
+	// ── Update Redis Hot-Path for the live dashboard ─────────────────
+	if err := d.redis.UpdateHotPath(ctx,
+		workItem.ID, workItem.ComponentID, workItem.Status,
+		workItem.SignalCount,
+		firstSeenAt.Format(time.RFC3339),
+		lastSeenAt.Format(time.RFC3339),
+		float64(lastSeenAt.Unix()),
+	); err != nil {
+		log.Printf("[debouncer] hot-path update failed for %s: %v", workItem.ID, err)
 	}
 
 	// Clean up the data key.
