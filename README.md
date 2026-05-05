@@ -125,7 +125,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Once all services are healthy, the dashboard will be available at `http://localhost` (or as configured in your `.env`).
+Once all services are healthy, the dashboard will be available at `http://localhost:3000` (or as configured in your `.env`).
 
 ---
 
@@ -139,7 +139,7 @@ Navigate to the `scripts/` directory and choose :
 
 Fires **10,000 signals** across 10 distinct components concurrently.
 
-** Need golang installed on system**
+**Need golang installed on system**
 
 ```bash
 ./run_10k_load.sh
