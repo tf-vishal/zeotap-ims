@@ -21,10 +21,10 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		Addr:         cfg.RedisAddr,
 		Password:     cfg.RedisPassword,
 		DB:           cfg.RedisDB,
-		PoolSize:     50,               // sized for high-throughput XADD
-		MinIdleConns: 10,
-		ReadTimeout:  2 * time.Second,
-		WriteTimeout: 2 * time.Second,
+		PoolSize:     200,              // sized for 50 stream workers + overhead
+		MinIdleConns: 30,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

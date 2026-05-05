@@ -1,5 +1,5 @@
 # ── Build stage ───────────────────────────────────────────
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -13,6 +13,5 @@ FROM alpine:3.21
 RUN apk --no-cache add ca-certificates
 WORKDIR /app
 COPY --from=builder /aggregator .
-COPY .env .env
 
 CMD ["./aggregator"]

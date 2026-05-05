@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -50,7 +51,7 @@ func NewWorkerPool(
 	).Err()
 	if err != nil {
 		// BUSYGROUP = group already exists, which is fine.
-		if err.Error() != "BUSYGROUP Consumer Group name already used" {
+		if !strings.HasPrefix(err.Error(), "BUSYGROUP") {
 			return nil, fmt.Errorf("create consumer group: %w", err)
 		}
 	}
@@ -87,8 +88,8 @@ func (wp *WorkerPool) runWorker(consumerName string) {
 			Group:    wp.consumerGroup,
 			Consumer: consumerName,
 			Streams:  []string{wp.streamName, ">"},
-			Count:    10,                    // batch size per read
-			Block:    2 * time.Second,       // block timeout — prevents busy-looping
+			Count:    10,              // batch size per read
+			Block:    2 * time.Second, // block timeout — prevents busy-looping
 		}).Result()
 
 		if err != nil {

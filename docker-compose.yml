@@ -1,41 +1,202 @@
 services:
+  # ═══════════════════════════════════════════════════════
+  #  Infrastructure
+  # ═══════════════════════════════════════════════════════
   redis:
     image: redis:7-alpine
     container_name: ims-redis
     ports:
-      - "6380:6379"
-    command: >
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    command: >-
       redis-server
       --notify-keyspace-events Ex
+      --maxclients 10000
+      --tcp-backlog 4096
+      --save ""
+      --appendonly no
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    sysctls:
+      net.core.somaxconn: 4096
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - zeotap_ims_network
 
   mongodb:
     image: mongo:7
     container_name: ims-mongo
     ports:
-      - "27018:27017"
+      - "${MONGO_HOST_PORT:-27018}:27017"
     environment:
-      MONGO_INITDB_DATABASE: ims
+      MONGO_INITDB_DATABASE: ${MONGO_DB}
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.runCommand('ping').ok" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - zeotap_ims_network
 
   postgres:
     image: postgres:16-alpine
     container_name: ims-postgres
     ports:
-      - "5433:5432"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     environment:
-      POSTGRES_USER: ims
-      POSTGRES_PASSWORD: ims_secret
-      POSTGRES_DB: ims
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pg_data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - zeotap_ims_network
+
+  # ═══════════════════════════════════════════════════════
+  #  Backend Services
+  # ═══════════════════════════════════════════════════════
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.api
+    container_name: ims-api
+    ports:
+      - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    sysctls:
+      net.core.somaxconn: 4096
+    environment:
+      SERVER_PORT: ${SERVER_PORT}
+      RATE_LIMIT: ${RATE_LIMIT}
+      RATE_BURST: ${RATE_BURST}
+      REDIS_ADDR: ${REDIS_ADDR}
+      REDIS_STREAM_NAME: ${REDIS_STREAM_NAME}
+      WORKER_COUNT: ${WORKER_COUNT}
+      DEBOUNCE_WINDOW_SEC: ${DEBOUNCE_WINDOW_SEC}
+      CONSUMER_GROUP: ${CONSUMER_GROUP}
+      CONSUMER_NAME_PREFIX: ${CONSUMER_NAME_PREFIX}
+      PROCESSOR_PORT: ${PROCESSOR_PORT}
+      MONGO_URI: ${MONGO_URI}
+      MONGO_DB: ${MONGO_DB}
+      POSTGRES_URI: ${POSTGRES_URI}
+      AGGREGATOR_INTERVAL_SEC: ${AGGREGATOR_INTERVAL_SEC}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - zeotap_ims_network
+
+  processor:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.processor
+    container_name: ims-processor
+    ports:
+      - "${PROCESSOR_PORT:-8081}:${PROCESSOR_PORT:-8081}"
+    environment:
+      SERVER_PORT: ${SERVER_PORT}
+      RATE_LIMIT: ${RATE_LIMIT}
+      RATE_BURST: ${RATE_BURST}
+      REDIS_ADDR: ${REDIS_ADDR}
+      REDIS_STREAM_NAME: ${REDIS_STREAM_NAME}
+      WORKER_COUNT: ${WORKER_COUNT}
+      DEBOUNCE_WINDOW_SEC: ${DEBOUNCE_WINDOW_SEC}
+      CONSUMER_GROUP: ${CONSUMER_GROUP}
+      CONSUMER_NAME_PREFIX: ${CONSUMER_NAME_PREFIX}
+      PROCESSOR_PORT: ${PROCESSOR_PORT}
+      MONGO_URI: ${MONGO_URI}
+      MONGO_DB: ${MONGO_DB}
+      POSTGRES_URI: ${POSTGRES_URI}
+      AGGREGATOR_INTERVAL_SEC: ${AGGREGATOR_INTERVAL_SEC}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - zeotap_ims_network
+
+  aggregator:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.aggregator
+    container_name: ims-aggregator
+    environment:
+      SERVER_PORT: ${SERVER_PORT}
+      RATE_LIMIT: ${RATE_LIMIT}
+      RATE_BURST: ${RATE_BURST}
+      REDIS_ADDR: ${REDIS_ADDR}
+      REDIS_STREAM_NAME: ${REDIS_STREAM_NAME}
+      WORKER_COUNT: ${WORKER_COUNT}
+      DEBOUNCE_WINDOW_SEC: ${DEBOUNCE_WINDOW_SEC}
+      CONSUMER_GROUP: ${CONSUMER_GROUP}
+      CONSUMER_NAME_PREFIX: ${CONSUMER_NAME_PREFIX}
+      PROCESSOR_PORT: ${PROCESSOR_PORT}
+      MONGO_URI: ${MONGO_URI}
+      MONGO_DB: ${MONGO_DB}
+      POSTGRES_URI: ${POSTGRES_URI}
+      AGGREGATOR_INTERVAL_SEC: ${AGGREGATOR_INTERVAL_SEC}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - zeotap_ims_network
+
+  # ═══════════════════════════════════════════════════════
+  #  Frontend
+  # ═══════════════════════════════════════════════════════
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ims-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    sysctls:
+      net.core.somaxconn: 4096
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - zeotap_ims_network
 
 volumes:
   redis_data:
   mongo_data:
   pg_data:
+
+networks:
+  zeotap_ims_network:

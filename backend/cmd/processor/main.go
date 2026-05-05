@@ -44,6 +44,8 @@ func main() {
 	defer pgClient.Close()
 
 	// ── 5. Observability ──────────────────────────────────────────────
+	// [CHANGE THIS] To change the Observability reporting interval (e.g. print metrics every X seconds),
+	// modify the duration value here (currently 5 * time.Second).
 	metrics := observability.NewProcessorMetrics(5*time.Second, redisClient)
 
 	// ── 6. Debouncer ──────────────────────────────────────────────────

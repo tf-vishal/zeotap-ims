@@ -12,11 +12,11 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/tf-vishal/zeotap-ims/internal/api/handlers"
-	"github.com/tf-vishal/zeotap-ims/internal/api/middleware"
 	"github.com/tf-vishal/zeotap-ims/internal/config"
 	"github.com/tf-vishal/zeotap-ims/internal/db"
 	"github.com/tf-vishal/zeotap-ims/internal/observability"
 	iredis "github.com/tf-vishal/zeotap-ims/internal/redis"
+	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -65,16 +65,19 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// Global rate limiter — applied to all routes.
-	router.Use(middleware.RateLimiter(cfg.RateLimit, cfg.RateBurst))
+	// Rate limiter will be injected into the ingestion handler to limit per signal.
+	limiter := rate.NewLimiter(rate.Limit(cfg.RateLimit), cfg.RateBurst)
 
 	// ── 8. Handlers ───────────────────────────────────────────────────
 	ingestionHandler := &handlers.IngestionHandler{
 		Buffer:  streamBuffer,
 		Metrics: metrics,
+		Limiter: limiter,
 	}
 	healthHandler := &handlers.HealthHandler{
 		RedisClient: redisClient,
+		MongoClient: mongoClient,
+		PGClient:    pgClient,
 	}
 	incidentHandler := &handlers.IncidentHandler{
 		RedisClient: redisClient,

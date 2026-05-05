@@ -1,18 +1,19 @@
 # ── Build stage ───────────────────────────────────────────
-FROM golang:1.25-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
+COPY package*.json ./
+RUN npm ci
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
+RUN npm run build
 
 # ── Runtime stage ─────────────────────────────────────────
-FROM alpine:3.21
-RUN apk --no-cache add ca-certificates
-WORKDIR /app
-COPY --from=builder /api .
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-EXPOSE 8080
-CMD ["./api"]
+# Copy the production Nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
