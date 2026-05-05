@@ -139,6 +139,8 @@ Navigate to the `scripts/` directory and choose :
 
 Fires **10,000 signals** across 10 distinct components concurrently.
 
+** Need golang installed on system**
+
 ```bash
 ./run_10k_load.sh
 ```
