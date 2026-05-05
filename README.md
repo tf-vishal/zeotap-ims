@@ -101,8 +101,8 @@ The entire infrastructure and application stack is containerized. No manual depe
 **1. Clone the repository**
 
 ```bash
-git clone <repository-url>
-cd <repository-directory>
+git clone https://github.com/tf-vishal/zeotap-ims.git
+cd zeotap-ims
 ```
 
 **2. Configure environment variables**
